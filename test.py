@@ -1,5 +1,7 @@
 import sys
 import os
+import time
+import resource
 import numpy as np
 from torchvision import datasets, transforms
 import argparse
@@ -57,10 +59,17 @@ def main():
     # 4. Start Solving
     print(f"Solving targeted robustness against class {target_label}...")
     options = Marabou.createOptions(verbosity=0) # restrict printing
+    start_time = time.perf_counter()
     exit_code, vals, stats = network.solve(output_path, options=options)
+    elapsed_sec = time.perf_counter() - start_time
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    # ru_maxrss is in KB on Linux
+    peak_rss_kb = usage.ru_maxrss
     
     # 5. result
     with open(output_path, "a") as f:
+        f.write(f"Verification time (sec): {elapsed_sec:.4f}\n")
+        f.write(f"Peak RSS (KB): {peak_rss_kb}\n")
         if exit_code == "sat":
             # Write the satisfying assignment for inputs/outputs into the file.
             for i, var in enumerate(input_vars):
@@ -86,12 +95,11 @@ def main():
             f.write(msg)
             print(msg)
         elif exit_code == "unsat":
-            msg = (
+
+            print(
                 f"\n[Result: UNSAT] -> The model IS robust against class {target_label}.\n"
                 f"Verified: No inputs within ||x' - x||_inf <= {epsilon} are classified as {target_label}.\n"
             )
-            f.write(msg)
-            print(msg)
         else:
             msg = f"\n[Result: {exit_code}] -> Something went wrong or timed out.\n"
             f.write(msg)
