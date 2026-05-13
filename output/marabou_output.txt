@@ -1,0 +1,7 @@
+unsat
+
+[Result: UNSAT] -> The model IS robust against class 0.
+Verified: No inputs within ||x' - x||_inf <= 0.001 are classified as 0.
+
+Verification time (sec): 0.0321
+Peak RSS (KB): 713596
