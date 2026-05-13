@@ -4,10 +4,11 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 import onnx
 from onnxsim import simplify
+from tqdm import tqdm
 
-class SimpleMLP(nn.Module):
+class two_layer_MLP(nn.Module):
     def __init__(self):
-        super(SimpleMLP, self).__init__()
+        super(two_layer_MLP, self).__init__()
         self.flatten = nn.Flatten()
         self.fc1 = nn.Linear(784, 32)
         self.relu = nn.ReLU()
@@ -22,7 +23,7 @@ class SimpleMLP(nn.Module):
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = SimpleMLP().to(device)
+    model = two_layer_MLP().to(device)
     
     transform = transforms.Compose([transforms.ToTensor()])
     train_dataset = datasets.FashionMNIST(root='./data', train=True, download=True, transform=transform)
@@ -31,12 +32,12 @@ def main():
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.005)
     
-    print("Training SimpleMLP for 5 Epoch...")
+    print("Training Two layer MLP for 5 Epoch...")
     model.train()
     for epoch in range(5):
         epoch_loss = 0
         epoch_accuracy = 0
-        for batch_idx, (data, target) in enumerate(train_loader):
+        for batch_idx, (data, target) in tqdm(enumerate(train_loader), total=len(train_loader)):
             data, target = data.to(device), target.to(device)
             optimizer.zero_grad()
             output = model(data)
@@ -50,7 +51,7 @@ def main():
             
     model.eval()
     dummy_input = torch.randn(1, 1, 28, 28).to(device)
-    onnx_path = 'custom_fashion_mnist.onnx'
+    onnx_path = 'output/custom_fashion_mnist.onnx'
     
     # 1. save ONNX format 
     torch.onnx.export(model, dummy_input, onnx_path,
@@ -66,7 +67,7 @@ def main():
     model_simp, check = simplify(onnx_model)
     assert check, "Simplified ONNX model could not be validated"
     
-    sim_path = 'custom_fashion_mnist_sim.onnx'
+    sim_path = 'output/custom_fashion_mnist_sim.onnx'
     onnx.save(model_simp, sim_path)
     print(f"Simplified model ready for Marabou saved to {sim_path}")
 
