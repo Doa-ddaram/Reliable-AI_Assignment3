@@ -1,0 +1,88 @@
+import sys
+import os
+from torchvision import datasets, transforms
+import argparse
+
+# Add Marabou library path
+sys.path.insert(0, os.path.abspath("./Marabou"))
+from maraboupy import Marabou
+
+def main():
+    # 1. Load the model
+    args = argparse.ArgumentParser(description="Verify robustness of a FashionMNIST model using Marabou")
+    args.add_argument("--model_path", type=str, default="onnx/custom_fashion_mnist_sim.onnx", help="Path to the ONNX model to verify")
+    args.add_argument("--output_path", type=str, default="output/marabou_output.txt", help="Path to save Marabou output (counter-examples if found)")
+    args.add_argument("--epsilon", type=float, default=0.01, help="L-infinity radius for robustness verification")
+    args = args.parse_args()
+    model_path = args.model_path
+    output_path = args.output_path
+    epsilon = args.epsilon
+
+    print(f"Loading model: {model_path}")
+    network = Marabou.read_onnx(model_path)
+
+    # 2. Load FashionMNIST test set
+    transform = transforms.Compose([transforms.ToTensor()])
+    test_dataset = datasets.FashionMNIST(root='./data', train=False, download=True, transform=transform)
+    image, true_label = test_dataset[0]
+    image_flat = image.numpy().flatten()
+    
+    print(f"Loaded image index 0. True label: {true_label}")
+
+    
+    # 3. Create Query 
+    target_label = (true_label + 1) % 10  # target index 
+    print(f"Setting Query -> Epsilon: {epsilon}, Target Label: {target_label}")
+
+    # Load the network variables
+    input_vars = network.inputVars[0].flatten()
+    output_vars = network.outputVars[0].flatten()
+
+    # Input constraints: L-infinity bounds (x - eps <= x' <= x + eps)
+    for i, x in enumerate(input_vars):
+        lower_bound = max(0.0, float(image_flat[i]) - epsilon)
+        upper_bound = min(1.0, float(image_flat[i]) + epsilon)
+        network.setLowerBound(x, lower_bound)
+        network.setUpperBound(x, upper_bound)
+
+    # Output constraints (Counter-example setup): 
+    # i.e., Output(true_label) - Output(target_label) <= 0
+    network.addInequality([output_vars[true_label], output_vars[target_label]], [1, -1], 0)
+
+    # 4. Start Solving
+    print(f"Solving targeted robustness against class {target_label}...")
+    options = Marabou.createOptions(verbosity=0) # restrict printing
+    exit_code, vals, stats = network.solve(output_path, options=options)
+    
+    # 5. result
+    with open(output_path, "a") as f:
+        if exit_code == "sat":
+            # Write the satisfying assignment for inputs/outputs into the file.
+            for i, var in enumerate(input_vars):
+                if var in vals:
+                    f.write(f"input {i} = {vals[var]}\n")
+            for i, var in enumerate(output_vars):
+                if var in vals:
+                    f.write(f"output {i} = {vals[var]}\n")
+
+            msg = (
+                f"\n[Result: SAT] -> The model is NOT robust against class {target_label}.\n"
+                f"An adversarial example exists within epsilon={epsilon} that tricks the model.\n"
+            )
+            f.write(msg)
+            print(msg)
+        elif exit_code == "unsat":
+            msg = (
+                f"\n[Result: UNSAT] -> The model IS robust against class {target_label}.\n"
+                f"Verified: No inputs within ||x' - x||_inf <= {epsilon} are classified as {target_label}.\n"
+            )
+            f.write(msg)
+            print(msg)
+        else:
+            msg = f"\n[Result: {exit_code}] -> Something went wrong or timed out.\n"
+            f.write(msg)
+            print(msg)
+
+
+if __name__ == "__main__":
+    main()
