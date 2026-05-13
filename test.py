@@ -1,11 +1,14 @@
 import sys
 import os
+import numpy as np
 from torchvision import datasets, transforms
 import argparse
+import matplotlib.pyplot as plt
 
 # Add Marabou library path
 sys.path.insert(0, os.path.abspath("./Marabou"))
 from maraboupy import Marabou
+
 
 def main():
     # 1. Load the model
@@ -13,10 +16,12 @@ def main():
     args.add_argument("--model_path", type=str, default="onnx/custom_fashion_mnist_sim.onnx", help="Path to the ONNX model to verify")
     args.add_argument("--output_path", type=str, default="output/marabou_output.txt", help="Path to save Marabou output (counter-examples if found)")
     args.add_argument("--epsilon", type=float, default=0.01, help="L-infinity radius for robustness verification")
+    args.add_argument("--adv_image_path", type=str, default="output/adv_image.png", help="Path to save adversarial image")
     args = args.parse_args()
     model_path = args.model_path
     output_path = args.output_path
     epsilon = args.epsilon
+    adv_image_path = args.adv_image_path
 
     print(f"Loading model: {model_path}")
     network = Marabou.read_onnx(model_path)
@@ -64,6 +69,15 @@ def main():
             for i, var in enumerate(output_vars):
                 if var in vals:
                     f.write(f"output {i} = {vals[var]}\n")
+
+            # Save adversarial input image if matplotlib is available.
+            if plt is not None:
+                adv_pixels = [vals[var] for var in input_vars]
+                adv_image = np.array(adv_pixels, dtype=np.float32).reshape(28, 28)
+                plt.imsave(adv_image_path, adv_image, cmap="gray")
+                f.write(f"Saved adversarial image to: {adv_image_path}\n")
+            else:
+                f.write("Matplotlib not available. Skipped saving adversarial image.\n")
 
             msg = (
                 f"\n[Result: SAT] -> The model is NOT robust against class {target_label}.\n"
